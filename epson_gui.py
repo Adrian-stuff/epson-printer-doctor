@@ -223,15 +223,16 @@ class App(tk.Tk):
     def detect(self):
         def work():
             self.ui(self.log, "Looking for Epson printers on USB…")
-            if epson_mac.usb_epson_devices():
+            devs = epson_mac.usb_epson_devices()
+            if devs:
                 self.ui(self.conn.set, "usb")
-                self.ui(self.log, "Found an Epson printer on USB.")
-                model = None
-                for name, _ in epson_mac.cups_printers():
-                    model = model or epson_mac.canonical_model(name.replace("_", " "))
+                model = epson_mac.usb_model()
+                self.ui(self.log, f"Found EPSON {devs[0]} on USB" +
+                        (f" → model {model}" if model else " (pick the model by hand)"))
                 if model:
                     self.ui(self.model.set, model)
-                self.ui(self.headline.configure, {"text": "Found on USB"})
+                self.ui(self.headline.configure,
+                        {"text": f"Found {model or devs[0]} on USB"})
                 return
             self.ui(self.log, "Checking printers known to macOS…")
             for name, uri in epson_mac.cups_printers():
@@ -270,9 +271,12 @@ class App(tk.Tk):
             return
 
         def work():
+            if usb:
+                for b in epson_mac.usb_blockers():
+                    self.ui(self.log, "⚠ " + epson_mac.USB_BLOCKER_HINT.format(b))
             self.ui(self.log, f"Reading {model} via {'USB' if usb else ip}…")
-            p = printer_core.make_printer(model, ip, usb)
-            rep = printer_core.read_report(p)
+            with printer_core.open_printer(model, ip, usb) as p:
+                rep = printer_core.read_report(p)
             rep["model"], rep["via"] = model, ("USB" if usb else ip)
             rep["time"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
             self.ui(self.show, rep)
@@ -342,8 +346,8 @@ class App(tk.Tk):
             return
 
         def work():
-            p = printer_core.make_printer(model, ip, usb)
-            ok = p.reset_waste_ink_levels()
+            with printer_core.open_printer(model, ip, usb) as p:
+                ok = p.reset_waste_ink_levels()
             msg = ("Waste counters reset. Turn the printer off and on again."
                    if ok else "The printer did not accept the reset. On newer firmware "
                    "use USB, or try Temporary Reset.")
@@ -364,8 +368,8 @@ class App(tk.Tk):
             return
 
         def work():
-            p = printer_core.make_printer(model, ip, usb)
-            ok = p.temporary_reset_waste()
+            with printer_core.open_printer(model, ip, usb) as p:
+                ok = p.temporary_reset_waste()
             msg = ("Temporary reset accepted. Turn the printer off and on again."
                    if ok else "The printer did not confirm the temporary reset.")
             self.ui(self.log, msg)
@@ -398,7 +402,7 @@ class App(tk.Tk):
         self.log(f"Report saved to {path}")
 
     def advanced(self):
-        subprocess.Popen([sys.executable, str(HERE / "ui.py"), "-P",
+        subprocess.Popen([sys.executable, str(HERE / "run_upstream.py"), "ui.py", "-P",
                           str(epson_mac.PICKLE)], cwd=HERE)
 
 

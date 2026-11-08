@@ -97,15 +97,65 @@ def canonical_model(raw):
 
 # ---------------------------------------------------------------- detection
 
+EPSON_VID = 0x04B8
+
+
 def usb_epson_devices():
-    out = subprocess.run(["system_profiler", "SPUSBDataType"],
-                         capture_output=True, text=True).stdout
+    """Product names of Epson USB devices, e.g. ['L3210 Series'].
+
+    Uses ioreg (present on every macOS; system_profiler's SPUSBDataType
+    returns nothing on recent versions), falling back to libusb.
+    """
     found = []
-    for block in out.split("\n\n"):
-        if "EPSON" in block.upper() or "0x04b8" in block:
-            m = re.search(r"^\s*(.*?):\s*$", block.strip().splitlines()[0])
-            found.append(m.group(1) if m else "EPSON device")
-    return [f for f in found if f.strip()]
+    try:
+        out = subprocess.run(["ioreg", "-p", "IOUSB", "-l", "-w0"],
+                             capture_output=True, text=True, timeout=15).stdout
+        # each device is a "+-o Name@..." node followed by its properties
+        for node in re.split(r"\+-o ", out):
+            vid = re.search(r'"idVendor" = (\d+)', node)
+            if vid and int(vid.group(1)) == EPSON_VID:
+                name = re.search(r'"USB Product Name" = "([^"]*)"', node)
+                found.append(name.group(1) if name else "EPSON device")
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if not found:
+        try:
+            import usb.core
+            for d in usb.core.find(find_all=True, idVendor=EPSON_VID) or []:
+                try:
+                    found.append(d.product or "EPSON device")
+                except Exception:
+                    found.append("EPSON device")
+        except Exception:
+            pass
+    return found
+
+
+USB_BLOCKERS = ("Epson Printer Utility", "EPSON Scan", "Epson ScanSmart")
+
+
+def usb_blockers():
+    """Names of running Epson apps that hold the printer's USB interface."""
+    try:
+        out = subprocess.run(["ps", "-axo", "comm"], capture_output=True,
+                             text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return sorted({b for b in USB_BLOCKERS for line in out.splitlines()
+                   if b.lower() in line.lower()})
+
+
+USB_BLOCKER_HINT = ("{} is running and holds the printer's USB connection; "
+                    "quit it, or USB reads will fail.")
+
+
+def usb_model():
+    """Supported model name of the first Epson printer on USB, if any."""
+    for name in usb_epson_devices():
+        m = canonical_model(name)
+        if m:
+            return m
+    return None
 
 
 def cups_printers():
@@ -150,9 +200,10 @@ def scan_network():
 def autodetect(model, ip, usb):
     """Fill in whatever of model / ip / usb the user didn't give."""
     if not ip and not usb:
-        if usb_epson_devices():
+        devs = usb_epson_devices()
+        if devs:
             usb = True
-            print("Using the Epson printer connected by USB.")
+            print(f"Using the Epson printer connected by USB ({devs[0]}).")
         else:
             for name, uri in cups_printers():
                 cand = None
@@ -173,6 +224,11 @@ def autodetect(model, ip, usb):
                     ip = epsons[0]["ip"]
                     model = model or canonical_model(epsons[0]["name"])
                     print(f"Found {epsons[0]['name']} at {ip}.")
+    if usb and not model:
+        model = usb_model()
+    if usb:
+        for b in usb_blockers():
+            print("Warning: " + USB_BLOCKER_HINT.format(b))
     if ip and not model:
         model = canonical_model(snmp_name(ip) or "")
     if not ip and not usb:
@@ -187,7 +243,7 @@ def autodetect(model, ip, usb):
 # ---------------------------------------------------------------- commands
 
 def upstream(args):
-    cmd = [PY, str(HERE / "epson_print_conf.py"), "-P", str(PICKLE)] + args
+    cmd = [PY, str(HERE / "run_upstream.py"), "epson_print_conf.py", "-P", str(PICKLE)] + args
     return subprocess.call(cmd, cwd=HERE)
 
 
@@ -255,7 +311,7 @@ def main():
     if cmd == "gui":
         return subprocess.call([PY, str(HERE / "epson_gui.py")] + argv, cwd=HERE)
     if cmd == "advanced":
-        return subprocess.call([PY, str(HERE / "ui.py"), "-P", str(PICKLE)] + argv,
+        return subprocess.call([PY, str(HERE / "run_upstream.py"), "ui.py", "-P", str(PICKLE)] + argv,
                                cwd=HERE)
 
     if cmd == "raw":
@@ -270,9 +326,9 @@ def main():
     if cmd == "status":
         return upstream(tgt + ["-i"] + rest)
     if cmd == "errors":
-        from printer_core import make_printer, read_errors, format_errors
-        p = make_printer(model, ip, usb)
-        print(format_errors(read_errors(p)))
+        from printer_core import open_printer, read_errors, format_errors
+        with open_printer(model, ip, usb) as p:
+            print(format_errors(read_errors(p)))
         return 0
     if cmd == "waste":
         return upstream(tgt + ["-q", "waste_ink_levels"] + rest)

@@ -63,6 +63,17 @@ Options: `-m MODEL`, `-a IP_ADDRESS`, `--usb`, `-d` (debug log), `--dry-run`.
   keyed exactly as shown (e.g. `"0x0002": "..."`). Pull requests with verified code
   tables are welcome.
 
+## USB troubleshooting
+
+- **Quit Epson Printer Utility, EPSON Scan and Epson ScanSmart** before using USB.
+  They hold the printer's USB connection, and the tool warns you if one is running.
+- Plug the printer straight into the Mac if a USB hub keeps dropping it.
+- If a USB read fails with "did not answer D4" after a crash or an interrupted
+  read, turn the printer off and on to reset its D4 session.
+- On macOS, libusb returns zero-length packets instead of waiting for data, which made
+  every D4 handshake look like "no answer". `macos_usb_fix.py` patches this, and every
+  entry point (CLI, app, advanced tool) applies it automatically.
+
 ## Notes and warnings
 
 - Newer firmware (for example the L3250 and some L3260 releases) blocks EEPROM access

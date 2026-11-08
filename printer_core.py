@@ -20,6 +20,7 @@ def extra_conf():
 
 
 def make_printer(model, ip=None, usb=False, timeout=None, retries=None):
+    import macos_usb_fix  # noqa: F401  (D4 over libusb on macOS)
     import epson_print_conf as epc
     cls = epc.EpsonPrinter
     if usb:
@@ -31,6 +32,29 @@ def make_printer(model, ip=None, usb=False, timeout=None, retries=None):
     if not usb:
         kw.update(hostname=ip, timeout=timeout, retries=retries)
     return cls(**kw)
+
+
+class open_printer:
+    """`with open_printer(model, ip, usb) as p:` - always releases USB afterwards.
+
+    A USB printer left open keeps the device claimed and its D4 session
+    half-open, which makes the next connection fail until the printer is
+    power-cycled.
+    """
+
+    def __init__(self, *args, **kwargs):
+        self.p = make_printer(*args, **kwargs)
+
+    def __enter__(self):
+        return self.p
+
+    def __exit__(self, *exc):
+        close = getattr(self.p, "close", None)
+        if close:
+            try:
+                close()
+            except Exception:
+                pass
 
 
 def fatal_code_meanings():
