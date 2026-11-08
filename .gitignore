@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+data/extra_models.pickle
+.DS_Store
+*-report-*.txt

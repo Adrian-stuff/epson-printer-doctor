@@ -1,0 +1,3 @@
+{
+  "_help": "Your own meanings for fatal error log codes, keyed exactly as epson-debug prints them (e.g. \"0x0002\" or \"0x5C\"). Fill these in from your model's Epson service manual; anything not listed shows 'see service manual'. 0 and all-FF are always shown as 'no error recorded'."
+}

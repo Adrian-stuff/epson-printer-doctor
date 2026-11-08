@@ -1,0 +1,4 @@
+#!/bin/zsh
+# Runs epson_gui.py from the EpsonMacTool folder next to this app.
+DIR="${0:A:h}/../../.."
+cd "$DIR" && exec "$DIR/.venv/bin/python" "$DIR/epson_gui.py"

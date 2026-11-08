@@ -1,0 +1,4 @@
+#!/bin/zsh
+# Launcher: runs the tool with its own Python environment.
+DIR="${0:A:h}"
+exec "$DIR/.venv/bin/python" "$DIR/epson_mac.py" "$@"
